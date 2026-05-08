@@ -1,0 +1,8 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace/deepstream_coursework
+
+COPY requirements.txt /tmp/requirements.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
+
+CMD ["python", "-m", "uvicorn", "src.control_api:app", "--host", "0.0.0.0", "--port", "18080"]

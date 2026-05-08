@@ -1,0 +1,250 @@
+# Savant module for raw video output (admin preview without privacy masking).
+#
+name: coursework_ppt_cascade_raw
+
+parameters:
+  frame:
+    width: 1280
+    height: 720
+    padding:
+      keep: true
+    geometry_base: 4
+
+  output_frame:
+    codec: h264
+    encoder: software
+
+  draw_func:
+    module: coursework_savant.draw_func
+    class_name: RawDrawFunc
+    kwargs:
+      draw_spec:
+        primary_traffic_detector.person:
+          bounding_box:
+            color: green
+            thickness: 3
+          label:
+            text: "{draw_label}"
+            color: black
+            bg_color: green
+        primary_traffic_detector.vehicle:
+          bounding_box:
+            color: orange
+            thickness: 3
+          label:
+            text: "{draw_label}"
+            color: black
+            bg_color: orange
+        primary_traffic_detector.foreign_object:
+          bounding_box:
+            color: blue
+            thickness: 3
+          label:
+            text: "{draw_label}"
+            color: black
+            bg_color: blue
+
+pipeline:
+  elements:
+    - element: pyfunc
+      name: adaptive_inference
+      module: coursework_savant.adaptive_inference
+      class_name: AdaptiveInferenceController
+      kwargs:
+        motion_threshold: 50000.0
+        alert_threshold: 100000.0
+        idle_frame_interval: 5
+        alert_cooldown_frames: 30
+        history_size: 10
+        resize_width: 64
+        resize_height: 64
+
+    - element: pyfunc
+      name: runtime_control
+      module: coursework_savant.savant_pipeline
+      class_name: RuntimeControlProcessor
+      kwargs:
+        model_state_path: /workspace/deepstream_coursework/runtime/model_state.json
+
+    - element: nvinfer@detector
+      name: primary_traffic_detector
+      model:
+        format: onnx
+        local_path: /workspace/deepstream_coursework/models/primary_yolo_coco
+        model_file: yolov8n_coco.onnx
+        engine_file: yolov8n_coco.onnx_b1_gpu0_fp16.engine
+        batch_size: 1
+        precision: fp16
+        interval: 0
+        label_file: coco_labels.txt
+        input:
+          object: auto.frame
+          shape: [3, 640, 640]
+          maintain_aspect_ratio: true
+          scale_factor: 0.0039215697906911373
+        output:
+          num_detected_classes: 80
+          layer_names: [output0]
+          converter:
+            module: savant.converter.yolo
+            class_name: TensorToBBoxConverter
+            kwargs:
+              confidence_threshold: 0.2
+              nms_iou_threshold: 0.45
+              top_k: 100
+              class_ids: [0, 1, 2, 3, 5, 7, 24, 26, 28, 56, 57, 58, 60, 62, 63, 67]
+          objects:
+            - class_id: 0
+              label: person
+              selector:
+                kwargs:
+                  confidence_threshold: 0.25
+                  nms_iou_threshold: 0.5
+            - class_id: 1
+              label: bicycle
+              selector:
+                kwargs:
+                  confidence_threshold: 0.25
+                  nms_iou_threshold: 0.5
+            - class_id: 2
+              label: car
+              selector:
+                kwargs:
+                  confidence_threshold: 0.3
+                  nms_iou_threshold: 0.5
+            - class_id: 3
+              label: motorcycle
+              selector:
+                kwargs:
+                  confidence_threshold: 0.3
+                  nms_iou_threshold: 0.5
+            - class_id: 5
+              label: bus
+              selector:
+                kwargs:
+                  confidence_threshold: 0.3
+                  nms_iou_threshold: 0.5
+            - class_id: 7
+              label: truck
+              selector:
+                kwargs:
+                  confidence_threshold: 0.3
+                  nms_iou_threshold: 0.5
+            - class_id: 24
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 26
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 28
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 56
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 57
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 58
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 60
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 62
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 63
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+            - class_id: 67
+              label: foreign_object
+              selector:
+                kwargs:
+                  confidence_threshold: 0.45
+                  nms_iou_threshold: 0.5
+
+    - element: nvinfer@detector
+      name: yolo_ppe_secondary
+      model:
+        format: onnx
+        local_path: /workspace/deepstream_coursework/models/yolo
+        model_file: best.onnx
+        engine_file: best.onnx_b1_gpu0_fp16.engine
+        batch_size: 1
+        precision: fp16
+        interval: 4
+        label_file: ppe_labels.txt
+        input:
+          object: primary_traffic_detector.person
+          shape: [3, 640, 640]
+          maintain_aspect_ratio: true
+          scale_factor: 0.0039215697906911373
+        output:
+          num_detected_classes: 5
+          layer_names: [output0]
+          converter:
+            module: savant.converter.yolo
+            class_name: TensorToBBoxConverter
+            kwargs:
+              confidence_threshold: 0.25
+              nms_iou_threshold: 0.45
+              top_k: 80
+          objects:
+            - class_id: 0
+              label: hardhat
+            - class_id: 1
+              label: no-hardhat
+            - class_id: 2
+              label: vest
+            - class_id: 3
+              label: no-vest
+            - class_id: 4
+              label: person
+
+    - element: nvtracker
+      properties:
+        ll-lib-file: /opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so
+        ll-config-file: /workspace/deepstream_coursework/configs/tracker_config.txt
+        tracker-width: 640
+        tracker-height: 384
+        gpu-id: 0
+
+    - element: pyfunc
+      name: kafka_event_processor
+      module: coursework_savant.savant_pipeline
+      class_name: EdgeEventProcessor
+      kwargs:
+        kafka_bootstrap_servers: kafka:19092
+        kafka_topic: deepstream.events
+        ttl_frames: 90
+        attribute_cooldown_frames: 30
+        enable_kafka: false
+        enable_crop_export: false

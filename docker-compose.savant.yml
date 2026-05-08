@@ -1,0 +1,198 @@
+services:
+  savant-module-masked:
+    build:
+      context: .
+      dockerfile: Dockerfile.savant
+    image: coursework-savant-module:latest
+    container_name: coursework-savant-module-masked
+    runtime: nvidia
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: all
+      PYTHONPATH: /workspace/deepstream_coursework:/opt/savant
+      OTEL_SERVICE_NAME: coursework-savant-masked
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: edge.node_id=edge-node-01,pipeline.branch=masked
+      ZMQ_SRC_ENDPOINT: router+bind:ipc:///tmp/zmq-sockets/input-video.ipc
+      ZMQ_SINK_ENDPOINT: pub+bind:ipc:///tmp/zmq-sockets/output-video-masked.ipc
+      SOURCE_URI: file:///workspace/deepstream_coursework/test.mp4
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: /workspace/deepstream_coursework/savant/module_masked.yml
+    depends_on:
+      - otel-collector
+    networks:
+      - deepstream_coursework_default
+
+  savant-module-raw:
+    build:
+      context: .
+      dockerfile: Dockerfile.savant
+    image: coursework-savant-module:latest
+    container_name: coursework-savant-module-raw
+    runtime: nvidia
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: all
+      PYTHONPATH: /workspace/deepstream_coursework:/opt/savant
+      OTEL_SERVICE_NAME: coursework-savant-raw
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: edge.node_id=edge-node-01,pipeline.branch=raw
+      ZMQ_SRC_ENDPOINT: router+bind:ipc:///tmp/zmq-sockets/input-video-raw.ipc
+      ZMQ_SINK_ENDPOINT: pub+bind:ipc:///tmp/zmq-sockets/output-video-raw.ipc
+      SOURCE_URI: file:///workspace/deepstream_coursework/test.mp4
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: /workspace/deepstream_coursework/savant/module_raw.yml
+    depends_on:
+      - otel-collector
+    networks:
+      - deepstream_coursework_default
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: coursework-otel-collector
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./configs/otel-collector-config.yml:/etc/otelcol/config.yml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - deepstream_coursework_default
+
+  source-video:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    container_name: coursework-savant-source
+    depends_on:
+      savant-module-masked:
+        condition: service_healthy
+    environment:
+      ZMQ_ENDPOINT: dealer+connect:ipc:///tmp/zmq-sockets/input-video.ipc
+      SOURCE_ID: test_video
+      LOCATION: /workspace/deepstream_coursework/test.mp4
+      FILE_TYPE: video
+      DOWNLOAD_PATH: /workspace/deepstream_coursework/runtime/downloads
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: bash /workspace/deepstream_coursework/scripts/video_file_replay_loop.sh
+    networks:
+      - deepstream_coursework_default
+
+  source-video-raw:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    container_name: coursework-savant-source-raw
+    depends_on:
+      savant-module-raw:
+        condition: service_healthy
+    environment:
+      ZMQ_ENDPOINT: dealer+connect:ipc:///tmp/zmq-sockets/input-video-raw.ipc
+      SOURCE_ID: test_video_raw
+      LOCATION: /workspace/deepstream_coursework/test.mp4
+      FILE_TYPE: video
+      DOWNLOAD_PATH: /workspace/deepstream_coursework/runtime/downloads
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: bash /workspace/deepstream_coursework/scripts/video_file_replay_loop.sh
+    networks:
+      - deepstream_coursework_default
+
+  frontend:
+    image: nginx:alpine
+    container_name: coursework-frontend
+    ports:
+      - "8000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+    networks:
+      - deepstream_coursework_default
+
+  sink-video-files-masked:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    container_name: coursework-savant-video-sink-masked
+    depends_on:
+      - savant-module-masked
+    environment:
+      ZMQ_ENDPOINT: sub+connect:ipc:///tmp/zmq-sockets/output-video-masked.ipc
+      DIR_LOCATION: /workspace/deepstream_coursework/runtime/savant-output
+      CHUNK_SIZE: 0
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: /opt/savant/adapters/gst/sinks/video_files.sh
+    networks:
+      - deepstream_coursework_default
+
+  sink-video-files-raw:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    container_name: coursework-savant-video-sink-raw
+    depends_on:
+      - savant-module-raw
+    environment:
+      ZMQ_ENDPOINT: sub+connect:ipc:///tmp/zmq-sockets/output-video-raw.ipc
+      DIR_LOCATION: /workspace/deepstream_coursework/runtime/raw-output
+      CHUNK_SIZE: 0
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: /opt/savant/adapters/gst/sinks/video_files.sh
+    networks:
+      - deepstream_coursework_default
+
+  sink-zlm-rtmp-masked:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    container_name: coursework-savant-zlm-sink-masked
+    depends_on:
+      - savant-module-masked
+      - zlm
+    environment:
+      PYTHONPATH: /workspace/deepstream_coursework:/opt/savant:/opt/savant/adapters/gst
+      ZMQ_ENDPOINT: sub+connect:ipc:///tmp/zmq-sockets/output-video-masked.ipc
+      RTMP_LOCATION: rtmp://zlm/live/ppt_cascade_masked
+      SOURCE_ID: test_video
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: python3 /workspace/deepstream_coursework/scripts/zmq_to_zlm_rtmp.py
+    networks:
+      - deepstream_coursework_default
+
+  sink-zlm-rtmp-raw:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    container_name: coursework-savant-zlm-sink-raw
+    depends_on:
+      - savant-module-raw
+      - zlm
+    environment:
+      PYTHONPATH: /workspace/deepstream_coursework:/opt/savant:/opt/savant/adapters/gst
+      ZMQ_ENDPOINT: sub+connect:ipc:///tmp/zmq-sockets/output-video-raw.ipc
+      RTMP_LOCATION: rtmp://zlm/live/ppt_cascade_raw
+      SOURCE_ID: test_video_raw
+    volumes:
+      - .:/workspace/deepstream_coursework
+      - zmq-sockets:/tmp/zmq-sockets
+    command: python3 /workspace/deepstream_coursework/scripts/zmq_to_zlm_rtmp.py
+    networks:
+      - deepstream_coursework_default
+
+  zlm:
+    image: zlmediakit/zlmediakit:master
+    container_name: coursework-zlm
+    ports:
+      - "8554:554"
+      - "8080:80"
+      - "1935:1935"
+      - "10000:10000/udp"
+    networks:
+      - deepstream_coursework_default
+
+volumes:
+  zmq-sockets:
+
+networks:
+  deepstream_coursework_default:
+    external: true

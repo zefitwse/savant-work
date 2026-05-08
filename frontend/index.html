@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时监控预览 - Raw vs Masked</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
+            gap: 20px;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .video-card {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .video-header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .video-title {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .video-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-raw {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .badge-masked {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .video-container {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            background: #000;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #fff;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 12px;
+        }
+
+        .footer a {
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .controls {
+            text-align: center;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .control-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .stream-info {
+            padding: 12px 16px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                padding: 10px;
+                gap: 10px;
+            }
+
+            .header h1 {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>实时监控预览</h1>
+        <p>Raw 输出 (管理员视角) vs Masked 输出 (操作员视角)</p>
+    </div>
+
+    <div class="container">
+        <div class="video-card">
+            <div class="video-header">
+                <span class="video-title">Raw 输出 - 管理员视角</span>
+                <span class="video-badge badge-raw">无遮罩</span>
+            </div>
+            <div class="video-container">
+                <video id="rawVideo" autoplay muted playsinline controls></video>
+                <div class="video-overlay">
+                    <span class="status-indicator">
+                        <span class="status-dot"></span>
+                        直播中
+                    </span>
+                </div>
+            </div>
+            <div class="stream-info">
+                流地址: <code>http://localhost:8080/live/ppt_cascade_raw.live.flv</code>
+            </div>
+        </div>
+
+        <div class="video-card">
+            <div class="video-header">
+                <span class="video-title">Masked 输出 - 操作员视角</span>
+                <span class="video-badge badge-masked">隐私遮罩</span>
+            </div>
+            <div class="video-container">
+                <video id="maskedVideo" autoplay muted playsinline controls></video>
+                <div class="video-overlay">
+                    <span class="status-indicator">
+                        <span class="status-dot"></span>
+                        直播中
+                    </span>
+                </div>
+            </div>
+            <div class="stream-info">
+                流地址: <code>http://localhost:8080/live/ppt_cascade_masked.live.flv</code>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="control-btn" onclick="refreshStreams()">刷新流</button>
+        <button class="control-btn" onclick="toggleLatency()">延迟模式: 流畅</button>
+    </div>
+
+    <div class="footer">
+        <p>测试视频无限循环播放 | 服务运行中...</p>
+        <p style="margin-top: 8px;">RTSP 地址:
+            <a href="rtsp://localhost:8554/live/ppt_cascade_raw" target="_blank">Raw</a> |
+            <a href="rtsp://localhost:8554/live/ppt_cascade_masked" target="_blank">Masked</a>
+        </p>
+    </div>
+
+    <script>
+        var lowLatencyMode = false;
+
+        function createFlvPlayer(videoElement, streamUrl) {
+            if (flvjs.isSupported()) {
+                var config = {
+                    type: 'flv',
+                    url: streamUrl,
+                    isLive: true,
+                    hasAudio: false,
+                    enableWorker: true,
+                    enableStashInitialMedia: false,
+                    stashInitialSize: 128,
+                    autoCleanupSourceBuffer: true,
+                    autoCleanupMaxBackwardDuration: 3,
+                    autoCleanupMinBackwardDuration: 2,
+                    lazyLoad: true,
+                    lazyLoadMaxDuration: 3,
+                    lazyLoadRecoverDuration: 2
+                };
+
+                if (lowLatencyMode) {
+                    config.liveBufferLatencyChasing = true;
+                    config.liveBufferLatencyMaxLatency = 0.5;
+                    config.liveBufferLatencyMinRemain = 0.3;
+                    config.liveSync = true;
+                    config.liveSyncMaxLatency = 0.5;
+                    config.liveSyncMinRemain = 0.3;
+                } else {
+                    config.liveBufferLatencyChasing = true;
+                    config.liveBufferLatencyMaxLatency = 1.5;
+                    config.liveBufferLatencyMinRemain = 0.5;
+                    config.liveSync = true;
+                    config.liveSyncMaxLatency = 1.5;
+                    config.liveSyncMinRemain = 0.5;
+                }
+
+                var flvPlayer = flvjs.createPlayer(config);
+
+                flvPlayer.attachMediaElement(videoElement);
+                flvPlayer.load();
+                flvPlayer.play();
+
+                flvPlayer.on(flvjs.Events.ERROR, function(err) {
+                    console.error('FLV Player Error:', err);
+                    setTimeout(function() {
+                        createFlvPlayer(videoElement, streamUrl);
+                    }, 3000);
+                });
+
+                return flvPlayer;
+            } else {
+                console.error('FLV is not supported in this browser');
+            }
+        }
+
+        var rawPlayer, maskedPlayer;
+
+        function initPlayers() {
+            var rawVideo = document.getElementById('rawVideo');
+            var maskedVideo = document.getElementById('maskedVideo');
+
+            rawPlayer = createFlvPlayer(rawVideo, 'http://localhost:8080/live/ppt_cascade_raw.live.flv');
+            maskedPlayer = createFlvPlayer(maskedVideo, 'http://localhost:8080/live/ppt_cascade_masked.live.flv');
+        }
+
+        function refreshStreams() {
+            if (rawPlayer) {
+                rawPlayer.destroy();
+            }
+            if (maskedPlayer) {
+                maskedPlayer.destroy();
+            }
+            initPlayers();
+        }
+
+        function toggleLatency() {
+            lowLatencyMode = !lowLatencyMode;
+            var btn = document.querySelector('.controls button:nth-child(2)');
+            btn.textContent = '延迟模式: ' + (lowLatencyMode ? '低延迟' : '流畅');
+            refreshStreams();
+        }
+
+        var script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js';
+        script.onload = function() {
+            initPlayers();
+        };
+        document.head.appendChild(script);
+
+        window.addEventListener('beforeunload', function() {
+            if (rawPlayer) rawPlayer.destroy();
+            if (maskedPlayer) maskedPlayer.destroy();
+        });
+    </script>
+</body>
+</html>

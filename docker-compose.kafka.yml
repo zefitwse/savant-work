@@ -1,0 +1,37 @@
+services:
+  kafka:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.7
+    container_name: coursework-redpanda
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:19092,external://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://kafka:19092,external://localhost:9092
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    networks:
+      - deepstream_coursework_default
+
+  topic-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.7
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "sleep 5 &&
+       rpk topic create deepstream.events --brokers kafka:19092 || true &&
+       rpk topic create reid.events --brokers kafka:19092 || true"
+    networks:
+      - deepstream_coursework_default
+
+networks:
+  deepstream_coursework_default:
+    name: deepstream_coursework_default

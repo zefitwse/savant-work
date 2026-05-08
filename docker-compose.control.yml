@@ -1,0 +1,45 @@
+services:
+  control-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.control
+    image: coursework-control-api:latest
+    container_name: coursework-control-api
+    working_dir: /workspace/deepstream_coursework
+    command: python -m uvicorn src.control_api:app --host 0.0.0.0 --port 18080
+    volumes:
+      - .:/workspace/deepstream_coursework
+    ports:
+      - "18080:18080"
+    environment:
+      REID_MODEL_PATH: ${REID_MODEL_PATH:-}
+    networks:
+      - deepstream_coursework_default
+
+  reid-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.control
+    image: coursework-control-api:latest
+    container_name: coursework-reid-worker
+    working_dir: /workspace/deepstream_coursework
+    command: >
+      python scripts/reid_service.py
+      --bootstrap-servers kafka:19092
+      --input-topic deepstream.events
+      --output-topic reid.events
+      --db-path /workspace/deepstream_coursework/runtime/edge_control.db
+      --project-root /workspace/deepstream_coursework
+    environment:
+      REID_MODEL_PATH: ${REID_MODEL_PATH:-}
+      OTEL_SERVICE_NAME: coursework-reid-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+    volumes:
+      - .:/workspace/deepstream_coursework
+    networks:
+      - deepstream_coursework_default
+
+networks:
+  deepstream_coursework_default:
+    external: true

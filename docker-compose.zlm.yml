@@ -1,0 +1,9 @@
+services:
+  zlm:
+    image: zlmediakit/zlmediakit:master
+    container_name: coursework-zlm
+    ports:
+      - "8554:554"
+      - "8080:80"
+      - "1935:1935"
+      - "10000:10000/udp"

@@ -1,0 +1,2 @@
+"""DeepStream coursework application."""
+
