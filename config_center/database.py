@@ -76,7 +76,10 @@ class ConfigVersion(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 # 初始化引擎（SQLite 文件放在项目根目录，便于 Docker 挂载）
-engine = create_engine("sqlite:///../runtime/config_center.db", echo=False)
+import os
+_db_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "runtime"))
+os.makedirs(_db_dir, exist_ok=True)
+engine = create_engine(f"sqlite:///{_db_dir}/config_center.db", echo=False)
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

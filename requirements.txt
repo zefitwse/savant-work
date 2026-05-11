@@ -11,3 +11,6 @@ opentelemetry-api>=1.24.0
 opentelemetry-sdk>=1.24.0
 opentelemetry-exporter-otlp>=1.24.0
 opentelemetry-instrumentation-fastapi>=0.45b0
+sqlalchemy>=2.0.0
+requests>=2.31.0
+kafka-python>=2.0.0

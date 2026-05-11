@@ -135,16 +135,19 @@ def hot_swap(request: HotSwapRequest) -> Dict[str, Any]:
     )
 
     # 2. 新增：尝试 HTTP 推送到 Savant 节点（如果节点已注册）
-    db = next(get_db())
-    node = db.query(Node).filter(Node.node_id == request.node_id).first()
     push_result = None
-    if node and node.api_endpoint:
-        push_result = sync_agent.send_model_switch(
-            node.api_endpoint,
-            model_id=request.detector,
-            engine_path=str(engine_path),
-            config_patch={"labels_path": request.labels_path} if request.labels_path else {},
-        )
+    db = next(get_db())
+    try:
+        node = db.query(Node).filter(Node.node_id == request.node_id).first()
+        if node and node.api_endpoint:
+            push_result = sync_agent.send_model_switch(
+                node.api_endpoint,
+                model_id=request.detector,
+                engine_path=str(engine_path),
+                config_patch={"labels_path": request.labels_path} if request.labels_path else {},
+            )
+    finally:
+        db.close()
 
     return {
         "id": record.id,
