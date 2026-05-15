@@ -14,11 +14,11 @@ class BBox(BaseModel):
 
 class ROIUpdate(BaseModel):
     name: str
-    type: str = Field(..., regex="^(forbidden|warning)$")
+    type: str = Field(..., pattern="^(forbidden|warning)$")
     points: List[List[float]]           # [[x,y], ...]
 
 class RuleUpdate(BaseModel):
-    rule_type: str = Field(..., regex="^(tripwire|loitering|density)$")
+    rule_type: str = Field(..., pattern="^(tripwire|loitering|density)$")
     params: Dict[str, Any]              # {"from":"A","to":"B"} 或 {"threshold_sec":30}
 
 class ModelRegister(BaseModel):
@@ -60,7 +60,7 @@ class ConfigVersionOut(BaseModel):
 
 class CommandPayload(BaseModel):
     """下发给 Savant 节点的指令格式，与 coursework_savant/savant_pipeline.py 对齐"""
-    command_type: str = Field(..., regex="^(MODEL_SWITCH|CONFIG_RELOAD)$")
+    command_type: str = Field(..., pattern="^(MODEL_SWITCH|CONFIG_RELOAD)$")
     cam_id: Optional[str] = None
     model_id: Optional[str] = None
     engine_path: Optional[str] = None
