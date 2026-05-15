@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from coursework_savant.adaptive_inference import report_suspicious_targets
 from coursework_savant.crop_exporter import TargetCropExporter
 from coursework_savant.event_builder import (
     EventObject,
@@ -131,6 +132,12 @@ class EdgeEventProcessor(NvDsPyFuncPlugin):
 
             primary_events = [self._to_event_object(frame_meta, obj_meta) for obj_meta in primary_meta]
             secondary_events = [self._to_event_object(frame_meta, obj_meta) for obj_meta in secondary_meta]
+            if primary_events:
+                report_suspicious_targets(
+                    str(getattr(frame_meta, "source_id", "")),
+                    int(getattr(frame_meta, "frame_num", -1)),
+                    len(primary_events),
+                )
             fold_secondary_attributes(primary_events, secondary_events)
             self.crop_exporter.enrich(buffer, frame_meta, primary_events)
 
