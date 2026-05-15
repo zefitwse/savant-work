@@ -1,0 +1,81 @@
+# Frigate 配置文件 - 适配腾讯云 Savant RTSP 流
+# 本配置用于在本地 CPU 环境下开发测试，最终部署到服务器
+
+# ========== MQTT 配置（暂不启用，简化部署） ==========
+mqtt:
+  enabled: false
+
+# ========== 检测器配置（使用 CPU，关闭检测以节省资源） ==========
+# 注意：Savant 已经完成了 AI 检测，Frigate 只需要录像和转发
+detectors:
+  # 配置一个 CPU 检测器，但不实际启用 detect
+  cpu_detector:
+    type: cpu
+    num_threads: 2
+
+# ========== go2rtc 配置（关键：实现 WebRTC 低延迟预览） ==========
+go2rtc:
+  streams:
+    savant_stream: "rtsp://82.156.163.237:8554/stream"
+  
+  # WebRTC 配置
+  webrtc:
+    candidates:
+      - "stun:stun.l.google.com:19302"
+
+# ========== 摄像头配置 ==========
+cameras:
+  # 摄像头名称，后续 API 调用和前端显示会用到
+  savant_cam:
+    # 启用录像
+    record:
+      enabled: true
+      retain:
+        days: 3           # 保留 3 天录像
+      events:
+        retain:
+          default: 30     # 事件录像保留 30 天
+    
+    # 启用快照（关键帧抓拍）
+    snapshots:
+      enabled: true
+      clean_copy: true    # 保留原始快照（不带画框）
+      timestamp: false    # 快照上不叠加时间戳
+    
+    # 检测功能：关闭（因为 Savant 已经做了检测）
+    # 如果不关闭，Frigate 会尝试用 CPU 做检测，浪费资源
+    detect:
+      enabled: false
+    
+    # 音频：可选，有需要再开启
+    # audio:
+    #   enabled: false
+    
+    # 视频流的 ffmpeg 配置
+    ffmpeg:
+      # 输入流：使用 go2rtc 中定义的流
+      inputs:
+        - path: rtsp://127.0.0.1:8554/savant_stream
+          roles:
+            - record      # 录制角色
+            - audio       # 如果需要音频，取消注释
+
+# ========== 全局录像配置 ==========
+record:
+  enabled: true
+  retain:
+    days: 3               # 常规录像保留天数
+  events:
+    retain:
+      default: 30         # 事件录像保留天数
+
+# ========== Web UI 配置 ==========
+web:
+  title: "课程作业 - 视频分析系统"
+  timezone: "Asia/Shanghai"
+
+# ========== 日志配置 ==========
+logger:
+  default: info
+  logs:
+    frigate.event: debug   # 打印事件日志，便于调试

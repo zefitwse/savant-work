@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate
+    privileged: true
+    restart: unless-stopped
+    shm_size: "256mb"
+    volumes:
+      - ./config/config.yml:/config/config.yml:ro
+      - ./storage:/media/frigate
+      - /etc/localtime:/etc/localtime:ro
+    tmpfs:
+      - /tmp/cache
+    ports:
+      - "5000:5000"
+      - "8554:8554"
+      - "8555:8555"
+      - "1984:1984"
+    # ²»Ê¹ÓÃ GPU£¨ÒòÎªÄãµÄµçÄÔ¿ÉÄÜÃ»ÓÐ£©
+    # Èç¹ûÊ¹ÓÃ GPU£¬È¡ÏûÏÂÃæ×¢ÊÍ
+    # runtime: nvidia
+    # devices:
+    #   - /dev/dri:/dev/dri               # Intel GPU
+    #   - /dev/nvidia0:/dev/nvidia0       # NVIDIA GPU
+    
+    environment:
+      - FRIGATE_RTSP_PASSWORD=password   # RTSP ÈÏÖ¤ÃÜÂë
+      # - NVIDIA_VISIBLE_DEVICES=all     # GPU Ïà¹Ø£¨ÈçÓÐ£©
