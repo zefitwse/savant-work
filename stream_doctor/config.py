@@ -1,0 +1,23 @@
+import os
+
+VIDEO_SOURCE = os.getenv("TASK9_VIDEO_SOURCE", "test.mp4")
+DB_PATH = os.getenv("TASK9_DB_PATH", "task9_vqd.db")
+
+DARK_THRESHOLD = 40
+BLUR_THRESHOLD = 80
+OCCLUSION_EDGE_THRESHOLD = 5
+
+# 信号丢失连续失败次数
+SIGNAL_LOSS_LIMIT = 5
+
+# 自动重连次数
+RECONNECT_MAX_ATTEMPTS = 5
+RECONNECT_INTERVAL_SECONDS = 3
+
+# 摄像头移位检测阈值
+SHIFT_DIFF_THRESHOLD = 35
+BASELINE_FRAME_INTERVAL = 30
+
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092")
+VQD_OUTPUT_TOPIC = os.getenv("TASK9_OUTPUT_TOPIC", "video.quality.events")
+ENABLE_KAFKA = os.getenv("TASK9_ENABLE_KAFKA", "false").lower() == "true"
