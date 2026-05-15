@@ -1,0 +1,18 @@
+window.VIDEO_STREAMS_CONFIG = [
+  { id: "v1", name: "视频1", stream: "/live/ppt_cascade_raw.live.flv" },
+  { id: "v2", name: "视频2", stream: "/live/ppt_cascade_masked.live.flv" },
+  { id: "v3", name: "视频3", stream: "" },
+  { id: "v4", name: "视频4", stream: "" },
+  { id: "v5", name: "视频5", stream: "" },
+  { id: "v6", name: "视频6", stream: "" },
+  { id: "v7", name: "视频7", stream: "" },
+  { id: "v8", name: "视频8", stream: "" },
+  { id: "v9", name: "视频9", stream: "" },
+  { id: "v10", name: "视频10", stream: "" },
+  { id: "v11", name: "视频11", stream: "" },
+  { id: "v12", name: "视频12", stream: "" },
+  { id: "v13", name: "视频13", stream: "" },
+  { id: "v14", name: "视频14", stream: "" },
+  { id: "v15", name: "视频15", stream: "" },
+  { id: "v16", name: "视频16", stream: "" },
+];
