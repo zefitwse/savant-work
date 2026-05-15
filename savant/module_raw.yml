@@ -200,7 +200,7 @@ pipeline:
         engine_file: best.onnx_b1_gpu0_fp16.engine
         batch_size: 1
         precision: fp16
-        interval: 4
+        interval: 0
         label_file: ppe_labels.txt
         input:
           object: primary_traffic_detector.person
