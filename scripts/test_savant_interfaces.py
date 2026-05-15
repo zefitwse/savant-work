@@ -177,12 +177,22 @@ def test_reid_cache_and_search_contract() -> None:
     red_crop = tmp_path / "red.jpg"
     red_crop_2 = tmp_path / "red_2.jpg"
     blue_crop = tmp_path / "blue.jpg"
-    Image.new("RGB", (64, 128), (210, 30, 30)).save(red_crop)
-    Image.new("RGB", (64, 128), (205, 35, 35)).save(red_crop_2)
-    Image.new("RGB", (64, 128), (20, 40, 210)).save(blue_crop)
+    rng = np.random.default_rng(7)
+    base = np.zeros((128, 64, 3), dtype=np.uint8)
+    base[:, :, 0] = 180 + rng.integers(0, 35, size=(128, 64), dtype=np.uint8)
+    base[:, :, 1] = 25 + rng.integers(0, 20, size=(128, 64), dtype=np.uint8)
+    base[:, :, 2] = 20 + rng.integers(0, 20, size=(128, 64), dtype=np.uint8)
+    similar = np.clip(base.astype(np.int16) + rng.integers(-3, 4, size=base.shape), 0, 255).astype(np.uint8)
+    different = np.zeros((128, 64, 3), dtype=np.uint8)
+    different[:, :, 0] = 20 + rng.integers(0, 20, size=(128, 64), dtype=np.uint8)
+    different[:, :, 1] = 35 + rng.integers(0, 25, size=(128, 64), dtype=np.uint8)
+    different[:, :, 2] = 180 + rng.integers(0, 35, size=(128, 64), dtype=np.uint8)
+    Image.fromarray(base, "RGB").save(red_crop)
+    Image.fromarray(similar, "RGB").save(red_crop_2)
+    Image.fromarray(different, "RGB").save(blue_crop)
 
     extractor = ReIDFeatureExtractor()
-    store = ReIDSQLiteStore(db_path, ttl_seconds=3600, match_threshold=0.95)
+    store = ReIDSQLiteStore(db_path, ttl_seconds=3600, match_threshold=0.84)
     event_1 = {
         "stream_id": "cam01",
         "track_id": 7,
