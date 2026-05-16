@@ -10,10 +10,10 @@ scrape_configs:
     static_configs:
       - targets: ["10.5.0.6:9400"]
 
-  - job_name: "vedio-raw"
-    static_configs:
-      - targets: ["10.5.0.6:8234"]
+  # - job_name: "vedio-raw"
+  #   static_configs:
+  #     - targets: ["10.5.0.6:8234"]
 
-  - job_name: "vedio-mask"
-    static_configs:
-      - targets: ["10.5.0.6:8345"]
+  # - job_name: "vedio-mask"
+  #   static_configs:
+  #     - targets: ["10.5.0.6:8345"]
