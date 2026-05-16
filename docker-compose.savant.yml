@@ -6,6 +6,8 @@ services:
     image: coursework-savant-module:latest
     container_name: coursework-savant-module-masked
     runtime: nvidia
+    ports:
+      - "8345:8345"
     environment:
       NVIDIA_DRIVER_CAPABILITIES: all
       PYTHONPATH: /workspace/deepstream_coursework:/opt/savant
@@ -32,6 +34,8 @@ services:
     image: coursework-savant-module:latest
     container_name: coursework-savant-module-raw
     runtime: nvidia
+    ports:
+      - "8234:8234"
     environment:
       NVIDIA_DRIVER_CAPABILITIES: all
       PYTHONPATH: /workspace/deepstream_coursework:/opt/savant
