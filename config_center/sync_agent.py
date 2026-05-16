@@ -11,8 +11,13 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
-from kafka import KafkaProducer
-from kafka.errors import NoBrokersAvailable
+
+try:
+    from kafka import KafkaProducer
+    from kafka.errors import NoBrokersAvailable
+except ImportError:
+    KafkaProducer = None
+    NoBrokersAvailable = Exception
 
 KAFKA_BROKERS = "redpanda:9092"
 COMMAND_TOPIC = "vsa.commands"
@@ -27,7 +32,11 @@ class SyncAgent:
         self.use_kafka = False
         self.producer = None
         self.mock_queue: list = []
-        
+
+        if KafkaProducer is None:
+            print("[SyncAgent] kafka-python not installed, falling back to HTTP+File mode")
+            return
+
         try:
             self.producer = KafkaProducer(
                 bootstrap_servers=KAFKA_BROKERS,
