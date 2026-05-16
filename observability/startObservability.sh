@@ -25,5 +25,5 @@ sudo docker run -d \
   --name prometheus \
   -p 9090:9090 \
   --restart always \
-  -v /home/ubuntu/savant_work/savant_coursework/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml \
+  -v /home/ubuntu/savant_work/savant_coursework/observability/prometheus.yml:/etc/prometheus/prometheus.yml \
   prom/prometheus
