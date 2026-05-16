@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile, Depends
+from fastapi import FastAPI, Header, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,7 @@ from config_center.sync_agent import sync_agent
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = PROJECT_ROOT / "runtime"
 MODEL_STATE_PATH = RUNTIME_DIR / "model_state.json"
+INFERENCE_POLICY_PATH = RUNTIME_DIR / "inference_policy.json"
 
 app = FastAPI(title="DeepStream/Savant Edge Control API", version="0.2.0")
 instrument_fastapi(app)
@@ -74,6 +75,20 @@ class ReIDEventRequest(BaseModel):
 class ReIDBase64SearchRequest(BaseModel):
     image_base64: str
     top_k: int = Field(default=20, ge=1, le=100)
+
+
+class InferencePolicyRequest(BaseModel):
+    idle_fps: float = Field(default=5.0, gt=0, le=25)
+    active_fps: float = Field(default=25.0, gt=0, le=60)
+    motion_mask_enabled: bool = True
+    motion_threshold: float = Field(default=50000.0, ge=0)
+    alert_threshold: float = Field(default=100000.0, ge=0)
+    static_cooldown_frames: int = Field(default=50, ge=1)
+    target_cooldown_frames: int = Field(default=125, ge=1)
+    paused_interval: int = Field(default=250, ge=1, le=250)
+    paused_probe_interval_frames: int = Field(default=25, ge=1)
+    segment_warmup_frames: int = Field(default=10, ge=0)
+    config_poll_interval_sec: float = Field(default=1.0, gt=0)
 
 
 # ==================== 原有路由（完全保留） ====================
@@ -187,6 +202,49 @@ def latest_camera_config(camera_id: str) -> Dict[str, Any]:
     return {"id": record.id, "created_at": record.created_at, "payload": record.payload}
 
 
+@app.put("/api/v1/cameras/{camera_id}/inference-policy")
+@app.post("/api/v1/cameras/{camera_id}/inference-policy")
+def update_inference_policy(camera_id: str, request: InferencePolicyRequest) -> Dict[str, Any]:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    if INFERENCE_POLICY_PATH.exists():
+        try:
+            payload = json.loads(INFERENCE_POLICY_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+    else:
+        payload = {}
+
+    payload.setdefault("default", {})
+    payload.setdefault("cameras", {})
+    policy = request.model_dump()
+    if camera_id in {"default", "*", "all"}:
+        payload["default"] = policy
+        target = "default"
+    else:
+        payload["cameras"][camera_id] = policy
+        target = camera_id
+    payload["updated_at"] = datetime.utcnow().isoformat()
+    INFERENCE_POLICY_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "status": "policy_updated",
+        "target": target,
+        "policy_path": str(INFERENCE_POLICY_PATH),
+        "policy": policy,
+    }
+
+
+@app.get("/api/v1/cameras/{camera_id}/inference-policy")
+def get_inference_policy(camera_id: str) -> Dict[str, Any]:
+    if not INFERENCE_POLICY_PATH.exists():
+        return {"target": camera_id, "policy": None}
+    payload = json.loads(INFERENCE_POLICY_PATH.read_text(encoding="utf-8"))
+    if camera_id in {"default", "*", "all"}:
+        policy = payload.get("default")
+    else:
+        policy = payload.get("cameras", {}).get(camera_id, payload.get("default"))
+    return {"target": camera_id, "policy": policy, "payload": payload}
+
+
 @app.post("/configs/deploy")
 def deploy_config(request: DeployRequest) -> Dict[str, Any]:
     record = store.save_deployment(
@@ -228,9 +286,19 @@ def ingest_reid_event(request: ReIDEventRequest) -> Dict[str, Any]:
 @app.post("/api/v1/reid/search/upload")
 @app.post("/reid/search/upload")
 async def search_reid_upload(
-    file: UploadFile = File(...),
+    request: Request,
     top_k: int = 20,
 ) -> Dict[str, Any]:
+    try:
+        form = await request.form()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="python-multipart is required for image upload search.",
+        ) from exc
+    file = form.get("file")
+    if file is None or not hasattr(file, "read"):
+        raise HTTPException(status_code=400, detail="file field is required.")
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="uploaded image is empty")
@@ -240,7 +308,7 @@ async def search_reid_upload(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
         "query": {
-            "filename": file.filename,
+            "filename": getattr(file, "filename", None),
             "feature_version": feature.version,
             "feature_dimension": feature.dimension,
             "top_k": top_k,

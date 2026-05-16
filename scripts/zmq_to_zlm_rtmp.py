@@ -24,6 +24,12 @@ class RtmpPreviewSink:
         self.appsrc: Optional[GstApp.AppSrc] = None
         self.pipeline: Optional[Gst.Pipeline] = None
         self.mainloop = GLib.MainLoop()
+        self.pts_offset = 0
+        self.last_input_pts: Optional[int] = None
+        self.last_output_pts: Optional[int] = None
+        self.last_output_dts: Optional[int] = None
+        self.last_duration = Gst.SECOND // 25
+        self.seen_segment_eos = False
 
     def start(self, frame: VideoFrame) -> None:
         if self.pipeline is not None:
@@ -59,28 +65,56 @@ class RtmpPreviewSink:
             return
         self.start(frame)
         assert self.appsrc is not None
-        buf = Gst.Buffer.new_wrapped(data)
-        buf.pts = convert_ts(frame.pts, frame.time_base)
-        buf.dts = (
-            convert_ts(frame.dts, frame.time_base)
-            if frame.dts is not None
-            else Gst.CLOCK_TIME_NONE
-        )
-        buf.duration = (
+        input_pts = convert_ts(frame.pts, frame.time_base)
+        duration = (
             convert_ts(frame.duration, frame.time_base)
             if frame.duration is not None
-            else Gst.CLOCK_TIME_NONE
+            else self.last_duration
         )
+        if duration and duration != Gst.CLOCK_TIME_NONE:
+            self.last_duration = duration
+
+        if (
+            self.seen_segment_eos
+            or (
+                self.last_input_pts is not None
+                and input_pts <= self.last_input_pts
+            )
+        ):
+            next_pts = (self.last_output_pts or 0) + self.last_duration
+            self.pts_offset = next_pts - input_pts
+            self.seen_segment_eos = False
+
+        output_pts = input_pts + self.pts_offset
+        if self.last_output_pts is not None and output_pts <= self.last_output_pts:
+            output_pts = self.last_output_pts + self.last_duration
+            self.pts_offset = output_pts - input_pts
+
+        buf = Gst.Buffer.new_wrapped(data)
+        buf.pts = output_pts
+        if frame.dts is not None:
+            output_dts = convert_ts(frame.dts, frame.time_base) + self.pts_offset
+            if self.last_output_dts is not None and output_dts <= self.last_output_dts:
+                output_dts = self.last_output_dts + self.last_duration
+            buf.dts = output_dts
+            self.last_output_dts = output_dts
+        else:
+            buf.dts = Gst.CLOCK_TIME_NONE
+        buf.duration = duration if duration != Gst.CLOCK_TIME_NONE else Gst.CLOCK_TIME_NONE
         result = self.appsrc.push_buffer(buf)
         if result == Gst.FlowReturn.EOS:
             self.stop()
             return
         if result != Gst.FlowReturn.OK:
             raise RuntimeError(f"Failed to push frame to RTMP pipeline: {result}.")
+        self.last_input_pts = input_pts
+        self.last_output_pts = output_pts
 
     def eos(self, _eos: EndOfStream) -> None:
-        if self.appsrc is not None:
-            self.appsrc.end_of_stream()
+        # File replay sends EOS at every loop. Keep the RTMP preview alive and
+        # only use it as a segment boundary for monotonic outgoing timestamps.
+        self.seen_segment_eos = True
+        print("Segment EOS received; keeping RTMP preview alive.", flush=True)
 
     def stop(self) -> None:
         if self.pipeline is not None:

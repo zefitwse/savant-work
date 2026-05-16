@@ -92,6 +92,60 @@ python scripts/export_reid_crops.py `
   --output-dir runtime\crops
 ```
 
+## 任务七：动态推理频率与静止过滤
+
+当前 Savant 前端已接入 `AdaptiveInferenceController`：
+
+```text
+zeromq_source_bin
+  -> pyfunc(adaptive_inference)
+  -> pyfunc(runtime_control)
+  -> nvinfer(primary_traffic_detector)
+```
+
+实现状态：
+
+```text
+idle:  5fps 低频巡检，25fps 输入对应 nvinfer interval=4
+alert: 检测到疑似目标后提升到 25fps，全帧率对应 nvinfer interval=0
+paused: 静止过滤近似暂停，实际下发 nvinfer interval=250，输出 should_process=False、requested_fps=0.00
+```
+
+策略由 Control API 写入 `runtime/inference_policy.json`，Savant PyFunc 定时读取：
+
+```http
+PUT /api/v1/cameras/{camera_id}/inference-policy
+GET /api/v1/cameras/{camera_id}/inference-policy
+```
+
+告警由 `EdgeEventProcessor` 在检测到 primary object 后写入 `runtime/adaptive_alert_state/{source_id}.json`。状态文件按路拆分，并通过临时文件原子替换，避免 masked/raw 分支并发写坏 JSON。
+
+输出 metadata tag：
+
+```text
+adaptive_inference.mode
+adaptive_inference.should_process
+adaptive_inference.motion_score
+adaptive_inference.requested_fps
+adaptive_inference.nvinfer_interval
+adaptive_inference.effective_nvinfer_interval
+adaptive_inference.stats
+```
+
+验证结果：
+
+```text
+docker compose -f docker-compose.savant.yml up -d --build --force-recreate ...
+coursework-savant-module-masked: healthy
+coursework-savant-module-raw: healthy
+日志可见 Applied adaptive nvinfer interval=4
+日志可见检测目标后 Applied adaptive nvinfer interval=0
+metadata 中可见 requested_fps=25.00、effective_nvinfer_interval=0
+静止压测 metadata 中可见 requested_fps=0.00、effective_nvinfer_interval=250
+```
+
+注意：DeepStream `nvinfer` 在运行中不适合通过反复 `READY -> PLAYING` 重建上下文来切换频率，实测会触发 CUDA host buffer 分配错误。因此当前实现采用运行中直接更新 `interval` 属性。静止 paused 模式已验证可实际下发 `effective_nvinfer_interval=250`，用于近似暂停静止画面推理。
+
 ## 任务十一：隐私保护与合规化
 
 相关文件：
@@ -214,7 +268,7 @@ python scripts/test_savant_interfaces.py
 .\scripts\run_full_test.ps1
 ```
 
-`scripts/video_file_replay_loop.sh` 会无限循环推送 `test.mp4`。完整测试脚本会后台启动 source adapter，采样完成后主动停止 `source-video` 与 `source-video-raw`，再导出 Re-ID 目标裁剪图。
+`scripts/video_file_replay_loop.sh` 会无限循环推送 `test.mp4`，默认 `LOOP_COUNT=0` 表示无限循环。需要临时测试固定轮数时，可以显式设置 `LOOP_COUNT=10`。完整测试脚本会后台启动 source adapter，采样完成后主动停止 `source-video` 与 `source-video-raw`，再导出 Re-ID 目标裁剪图。
 
 消费 Kafka：
 

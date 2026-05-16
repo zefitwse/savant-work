@@ -11,6 +11,14 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from control_store import ControlStore
+from coursework_savant.adaptive_inference import (
+    InferenceMode,
+    InferencePolicy,
+    _safe_source_file,
+    _write_alert_state_atomic,
+    fps_to_nvinfer_interval,
+    update_nvinfer_interval_config,
+)
 from coursework_savant.crop_exporter import TargetCropExporter
 from coursework_savant.event_builder import EventObject, SparseEventBuilder, fold_secondary_attributes
 from coursework_savant.model_switcher import ModelSwitchWatcher
@@ -117,6 +125,29 @@ def test_privacy_masker() -> None:
 
     preview_boxes = masker.collect_preview_mask_boxes([FakeObject()])
     assert preview_boxes[-1] == (130, 50, 140, 144)
+
+
+def test_adaptive_inference_policy_contract() -> None:
+    policy = InferencePolicy(idle_fps=5, active_fps=25, paused_interval=250)
+    assert policy.infer_interval(InferenceMode.IDLE, input_fps=25) == 4
+    assert policy.infer_interval(InferenceMode.ALERT, input_fps=25) == 0
+    assert policy.infer_interval(InferenceMode.PAUSED, input_fps=25) == 250
+    assert fps_to_nvinfer_interval(30, 10) == 2
+
+    config = "[property]\ngpu-id = 0\nsecondary-reinfer-interval = 4\n[class-attrs-all]\n"
+    updated = update_nvinfer_interval_config(config, 0)
+    assert "secondary-reinfer-interval = 0" in updated
+    path_config = "[property]\nmodel-engine-file = model.engine\nlabelfile-path = labels.txt\n"
+    path_updated = update_nvinfer_interval_config(path_config, 4, ROOT / "models")
+    assert "model-engine-file = " + (ROOT / "models" / "model.engine").as_posix() in path_updated
+
+    alert_dir = ROOT / ".codex_tmp" / "adaptive_alert_state"
+    alert_dir.mkdir(parents=True, exist_ok=True)
+    _write_alert_state_atomic(alert_dir, "cam/01", 12, 3)
+    alert_file = alert_dir / f"{_safe_source_file('cam/01')}.json"
+    alert_payload = json.loads(alert_file.read_text(encoding="utf-8"))
+    assert alert_payload["source_id"] == "cam/01"
+    assert alert_payload["last_target_frame"] == 12
 
 
 def test_control_store_and_hotswap_watcher() -> None:
@@ -230,6 +261,7 @@ if __name__ == "__main__":
     test_event_builder()
     test_crop_exporter_and_gpu_ref_contract()
     test_privacy_masker()
+    test_adaptive_inference_policy_contract()
     test_control_store_and_hotswap_watcher()
     test_reid_cache_and_search_contract()
     test_telemetry_noop_contract()
