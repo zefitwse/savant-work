@@ -21,34 +21,6 @@ import {
 import { useAppStore } from "../store/appStore";
 import { HeatmapComponent } from "./HeatmapComponent";
 
-// kafka数据格式demo
-let kafkaData = [
-  {
-    stream_id: "stream1_1",
-    app: "live",
-    stream: "processed/stream1_1",
-    event: "object_detect",
-    objects: [
-      { label: "person", x: 100, y: 200 },
-      { label: "car", x: 300, y: 400 },
-      //   待扩展
-    ],
-    timestamp: 1744567890123,
-  },
-  {
-    stream_id: "stream1_1",
-    app: "live",
-    stream: "processed/stream1_1",
-    event: "object_detect",
-    objects: [
-      { label: "person", x: 100, y: 200 },
-      { label: "car", x: 300, y: 400 },
-      //   待扩展
-    ],
-    timestamp: 1744567890124,
-  },
-];
-
 export const Dashboard = () => {
   const { dashboardData, setDashboardData } = useAppStore();
   const [isPlaying, setIsPlaying] = useState(true);
@@ -58,8 +30,8 @@ export const Dashboard = () => {
 
   // 模拟实时数据流
   const generateMockData = () => {
-    const baseLng = 116.3974; // 北京经度
-    const baseLat = 39.9093; // 北京纬度
+    const baseLng = 116.3974; // 经度
+    const baseLat = 39.9093; // 纬度
 
     return {
       crowdDensity: Math.floor(Math.random() * 1000) + 100,

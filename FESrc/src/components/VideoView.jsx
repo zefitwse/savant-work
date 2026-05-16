@@ -1,103 +1,130 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Row, Col, Button, Space, Card, Empty } from "antd";
 import {
   BorderOutlined,
   BorderInnerOutlined,
   BorderTopOutlined,
   BorderBottomOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 
 export const VideoView = () => {
   const videoStreams = window.VIDEO_STREAMS_CONFIG || [];
-
   const streamHost = window.location.hostname || "127.0.0.1";
   const streamPort = 8080;
 
   const players = useRef({});
-
+  const MAX_GRID = 16;
   const [splitMode, setSplitMode] = useState(9);
+
+  // ===================== 新增：摄像头状态 =====================
+  const [cameraStatus, setCameraStatus] = useState({});
+
+  // 获取单个摄像头状态
+  const fetchCameraStatus = useCallback(async (cameraId) => {
+    if (!cameraId) return;
+    try {
+      const res = await fetch(`/api/v1/vqd/status?camera_id=${cameraId}`);
+      const data = await res.json();
+      setCameraStatus((prev) => ({
+        ...prev,
+        [cameraId]: data,
+      }));
+    } catch (err) {
+      console.error("获取状态失败", cameraId, err);
+    }
+  }, []);
+
+  // 轮询所有摄像头状态（3秒刷新一次）
+  useEffect(() => {
+    const cameraIds = videoStreams.map((s) => s.cam).filter(Boolean);
+    if (cameraIds.length === 0) return;
+
+    // 立即执行一次
+    cameraIds.forEach((cam) => fetchCameraStatus(cam));
+
+    // 定时轮询
+    const timer = setInterval(() => {
+      cameraIds.forEach((cam) => fetchCameraStatus(cam));
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [videoStreams, fetchCameraStatus]);
 
   // 分屏模式配置
   const splitModeConfig = {
-    1: { rows: 1, cols: 1, gridClass: "split-1" },
-    4: { rows: 2, cols: 2, gridClass: "split-4" },
-    9: { rows: 3, cols: 3, gridClass: "split-9" },
-    16: { rows: 4, cols: 4, gridClass: "split-16" },
+    1: { rows: 1, cols: 1 },
+    4: { rows: 2, cols: 2 },
+    9: { rows: 3, cols: 3 },
+    16: { rows: 4, cols: 4 },
   };
 
-  const playVideo = (domId, stream) => {
-    const streamUrl = `http://${streamHost}:${streamPort}${stream}`;
-    console.log(streamUrl);
+  // 初始化播放
+  const playVideo = useCallback(
+    (domId, stream) => {
+      if (!domId || !stream) return;
+      if (players.current[domId]) return;
 
-    if (stream) {
-      let domEle = document.getElementById(domId);
+      const streamUrl = `http://${streamHost}:${streamPort}${stream}`;
+      const domEle = document.getElementById(domId);
+      if (!domEle || !window.flvjs) return;
 
-      if (domEle) {
-        let config = {
-          type: "flv",
-          url: streamUrl,
-          isLive: true,
-          hasAudio: false,
-          enableWorker: true,
-          enableStashInitialMedia: false,
-          stashInitialSize: 128,
-          autoCleanupSourceBuffer: true,
-          autoCleanupMaxBackwardDuration: 3,
-          autoCleanupMinBackwardDuration: 2,
-          lazyLoad: true,
-          lazyLoadMaxDuration: 3,
-          lazyLoadRecoverDuration: 2,
-          liveBufferLatencyChasing: true,
-          liveBufferLatencyMaxLatency: 0.5,
-          liveBufferLatencyMinRemain: 0.3,
-          liveSync: true,
-          liveSyncMaxLatency: 0.5,
-          liveSyncMinRemain: 0.3,
-        };
+      const config = {
+        type: "flv",
+        url: streamUrl,
+        isLive: true,
+        hasAudio: false,
+        enableWorker: true,
+        autoCleanupSourceBuffer: true,
+        liveBufferLatencyChasing: true,
+        liveBufferLatencyMaxLatency: 0.5,
+        liveBufferLatencyMinRemain: 0.3,
+      };
 
-        const player = flvjs.createPlayer(config);
+      const player = window.flvjs.createPlayer(config);
+      player.attachMediaElement(domEle);
+      player.load();
+      player.play().catch(() => {});
 
-        player.attachMediaElement(domEle);
-        player.load();
-        player.play();
+      players.current[domId] = player;
+    },
+    [streamHost, streamPort],
+  );
 
-        players.current[domId] = player;
-      }
-    }
-  };
-
-  useEffect(() => {
-    videoStreams.forEach((item) => {
-      playVideo(item.id, item.stream);
-    });
-
-    // 页面关闭时停止播放
-    return () => {
-      Object.values(players.current).forEach((p) => p?.destroy());
-    };
-  }, []);
-
-  // 获取当前显示的流
-  const getDisplayStreams = () => {
-    const maxStreams = splitMode;
-    const streamsToDisplay = videoStreams.slice(0, maxStreams);
-
-    // 如果流数量不足，用空位补全
-    while (streamsToDisplay.length < maxStreams) {
-      streamsToDisplay.push({
-        id: `empty-${streamsToDisplay.length}`,
-        name: "",
-        url: "",
+  // 固定16格
+  const getFixedGridList = () => {
+    const list = [];
+    for (let i = 0; i < MAX_GRID; i++) {
+      const stream = videoStreams[i];
+      list.push({
+        id: stream?.id || `empty-grid-${i}`,
+        stream: stream?.stream || "",
+        name: stream?.name || "",
+        index: i,
       });
     }
-
-    return streamsToDisplay;
+    return list;
   };
 
-  // 分屏模式切换
   const handleSplitModeChange = (mode) => {
     setSplitMode(mode);
   };
+
+  // 初始化播放
+  useEffect(() => {
+    const list = getFixedGridList();
+    list.forEach((item) => {
+      if (item.stream) {
+        setTimeout(() => playVideo(item.id, item.stream), 50);
+      }
+    });
+
+    return () => {
+      Object.values(players.current).forEach((p) => p?.destroy());
+    };
+  }, [playVideo]);
+
+  const isGridShow = (index) => index < splitMode;
 
   const renderSplitModeButtons = () => (
     <Space>
@@ -132,32 +159,42 @@ export const VideoView = () => {
     </Space>
   );
 
+  // ===================== 渲染视频格子（带状态） =====================
   const renderVideoGrid = () => {
-    const displayStreams = getDisplayStreams();
-    const config = splitModeConfig[splitMode];
+    const gridList = getFixedGridList();
+    const { rows, cols } = splitModeConfig[splitMode];
 
     return (
-      <div className={`split-layout ${config.gridClass}`}>
-        {displayStreams.map((stream, index) => {
-          const hidden = index >= splitMode;
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gridTemplateRows: `repeat(${rows}, 1fr)`,
+          gap: 4,
+          height: "100%",
+        }}
+      >
+        {gridList.map((item, index) => {
+          const show = isGridShow(index);
+          const status = cameraStatus[item.id]; // 状态
+          const isError = status?.status === "MAINTENANCE";
 
           return (
             <div
-              key={stream?.id || `empty-${index}`}
+              key={item.id}
               style={{
                 background: "#000",
                 position: "relative",
                 minHeight: 200,
-                display: hidden ? "none" : "block",
+                display: show ? "block" : "none",
+                overflow: "hidden",
               }}
             >
-              {stream.stream ? (
+              {/* 视频 */}
+              {item.stream ? (
                 <video
-                  style={{
-                    height: "100%",
-                    width: "100%",
-                  }}
-                  id={stream.id}
+                  style={{ height: "100%", width: "100%", objectFit: "fill" }}
+                  id={item.id}
                   autoPlay
                   muted
                   playsInline
@@ -171,17 +208,38 @@ export const VideoView = () => {
                     alignItems: "center",
                     justifyContent: "center",
                     background: "#1a1a1a",
-                    color: "#666",
                     border: "1px dashed #333",
                   }}
                 >
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    style={{ color: "#fff" }}
                     description={
                       <span style={{ color: "#fff" }}>无视频流</span>
                     }
                   />
+                </div>
+              )}
+
+              {/* ===================== 摄像头状态提示（悬浮层） ===================== */}
+              {isError && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    left: 6,
+                    zIndex: 10,
+                    background: "rgba(255,77,79,0.85)",
+                    color: "#fff",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <WarningOutlined />
+                  {status?.status || "摄像头异常"}
                 </div>
               )}
             </div>
@@ -193,7 +251,6 @@ export const VideoView = () => {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      {/* 顶部控制栏 */}
       <Card size="small" style={{ marginBottom: 0, borderRadius: 0 }}>
         <Row justify="space-between" align="middle">
           <Col>
@@ -204,8 +261,6 @@ export const VideoView = () => {
           </Col>
         </Row>
       </Card>
-
-      {/* 视频网格区域 */}
       <div style={{ flex: 1, overflow: "hidden" }}>{renderVideoGrid()}</div>
     </div>
   );

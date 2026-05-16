@@ -1,6 +1,16 @@
 window.VIDEO_STREAMS_CONFIG = [
-  { id: "v1", name: "视频1", stream: "/live/ppt_cascade_raw.live.flv" },
-  { id: "v2", name: "视频2", stream: "/live/ppt_cascade_masked.live.flv" },
+  {
+    id: "v1",
+    name: "视频1",
+    cam: "cam01",
+    stream: "/live/ppt_cascade_raw.live.flv",
+  },
+  {
+    id: "v2",
+    name: "视频2",
+    cam: "cam02",
+    stream: "/live/ppt_cascade_masked.live.flv",
+  },
   { id: "v3", name: "视频3", stream: "" },
   { id: "v4", name: "视频4", stream: "" },
   { id: "v5", name: "视频5", stream: "" },
