@@ -1,4 +1,6 @@
-﻿import json
+﻿# stream_doctor/worker.py
+import json
+import threading
 import time
 
 import cv2
@@ -18,6 +20,42 @@ from stream_doctor.config import (
 from stream_doctor.kafka_writer import VQDKafkaWriter
 from stream_doctor.metrics import diagnose_frame
 from stream_doctor.store import VQDStore
+
+
+OPEN_TIMEOUT_SECONDS = 8
+READ_TIMEOUT_SECONDS = 5
+
+
+def call_with_timeout(func, timeout_seconds):
+    """
+    用线程给 OpenCV 的打开流/读帧操作加超时。
+    防止 RTSP 地址错误时 cap.read() 一直卡住。
+    """
+    result = {
+        "done": False,
+        "value": None,
+        "error": None,
+    }
+
+    def target():
+        try:
+            result["value"] = func()
+        except Exception as e:
+            result["error"] = e
+        finally:
+            result["done"] = True
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout_seconds)
+
+    if not result["done"]:
+        return False, None
+
+    if result["error"] is not None:
+        return False, None
+
+    return True, result["value"]
 
 
 class VQDWorker:
@@ -92,7 +130,7 @@ class VQDWorker:
                 "signal_loss_count": self.signal_loss_count,
                 "reconnect_attempts": self.reconnect_attempts,
             },
-            message="RTSP/视频流读取失败，进入维护中状态，正在尝试自动重连",
+            message="RTSP/视频流读取失败或超时，进入维护中状态，正在尝试自动重连",
         )
 
     def save_reconnected(self):
@@ -105,8 +143,42 @@ class VQDWorker:
             message="视频流自动重连成功，恢复正常",
         )
 
+    def open_capture_raw(self):
+        cap = cv2.VideoCapture(self.video_source, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return cap
+
     def open_capture(self):
-        return cv2.VideoCapture(self.video_source)
+        print(f"[StreamDoctor] 正在打开视频流：{self.video_source}")
+
+        ok, cap = call_with_timeout(self.open_capture_raw, OPEN_TIMEOUT_SECONDS)
+
+        if not ok or cap is None:
+            print("[StreamDoctor] 打开视频流超时或失败")
+            return None
+
+        if not cap.isOpened():
+            print("[StreamDoctor] 视频流不可用")
+            cap.release()
+            return None
+
+        print("[StreamDoctor] 视频流打开成功")
+        return cap
+
+    def read_frame(self, cap):
+        ok, value = call_with_timeout(cap.read, READ_TIMEOUT_SECONDS)
+
+        if not ok or value is None:
+            print("[StreamDoctor] 读取视频帧超时")
+            return False, None
+
+        ret, frame = value
+
+        if not ret or frame is None:
+            print("[StreamDoctor] 读取视频帧失败")
+            return False, None
+
+        return True, frame
 
     def try_reconnect(self):
         while self.reconnect_attempts < RECONNECT_MAX_ATTEMPTS:
@@ -119,30 +191,54 @@ class VQDWorker:
 
             cap = self.open_capture()
 
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if ret:
-                    self.signal_loss_count = 0
-                    self.save_reconnected()
-                    return cap, frame
+            if cap is None:
+                continue
+
+            ret, frame = self.read_frame(cap)
+
+            if ret:
+                self.signal_loss_count = 0
+                self.save_reconnected()
+                return cap, frame
 
             cap.release()
 
         print("[StreamDoctor] 自动重连失败，保持维护中状态")
         return None, None
 
+    def handle_read_failure(self, cap):
+        self.signal_loss_count += 1
+        print(
+            f"[StreamDoctor] SIGNAL LOSS {self.signal_loss_count}/{SIGNAL_LOSS_LIMIT}"
+        )
+
+        if self.signal_loss_count < SIGNAL_LOSS_LIMIT:
+            time.sleep(0.5)
+            return cap, None, False
+
+        self.save_signal_loss()
+
+        if cap is not None:
+            cap.release()
+
+        cap, first_frame = self.try_reconnect()
+
+        if cap is None:
+            return None, None, True
+
+        return cap, first_frame, False
+
     def run(self, show=True):
         cap = self.open_capture()
+        first_frame = None
 
-        if not cap.isOpened():
+        if cap is None:
             self.signal_loss_count = SIGNAL_LOSS_LIMIT
             self.save_signal_loss()
 
             cap, first_frame = self.try_reconnect()
             if cap is None:
                 return
-        else:
-            first_frame = None
 
         frame_id = 0
 
@@ -152,22 +248,12 @@ class VQDWorker:
                 frame = first_frame
                 first_frame = None
             else:
-                ret, frame = cap.read()
+                ret, frame = self.read_frame(cap)
 
             if not ret:
-                self.signal_loss_count += 1
-
-                if self.signal_loss_count >= SIGNAL_LOSS_LIMIT:
-                    self.save_signal_loss()
-
-                    cap.release()
-                    cap, first_frame = self.try_reconnect()
-
-                    if cap is None:
-                        break
-
-                    continue
-
+                cap, first_frame, should_stop = self.handle_read_failure(cap)
+                if should_stop:
+                    break
                 continue
 
             self.signal_loss_count = 0
@@ -218,7 +304,9 @@ class VQDWorker:
 
             time.sleep(0.01)
 
-        cap.release()
+        if cap is not None:
+            cap.release()
+
         cv2.destroyAllWindows()
 
 

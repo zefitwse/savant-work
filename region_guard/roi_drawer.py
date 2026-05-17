@@ -1,10 +1,10 @@
-# task6/roi_drawer.py
+# region_guard/roi_drawer.py
 import cv2
 import json
 import os
 
-VIDEO_PATH = "test.mp4"
-ROI_PATH = "region_guard/roi_config.json"
+VIDEO_PATH = r"D:\App\savant-work\savant-work-main\test.mp4"
+ROI_PATH = r"D:\App\savant-work\savant-work-main\region_guard\roi_config.json"
 CAMERA_ID = "cam01"
 
 points = []
@@ -34,7 +34,7 @@ def mouse_callback(event, x, y, flags, param):
             print("撤销上一个点")
 
 
-def draw_ui(frame):
+def draw_ui(frame, paused):
     display = frame.copy()
 
     # 已保存 ROI
@@ -64,18 +64,24 @@ def draw_ui(frame):
     for i in range(len(points) - 1):
         cv2.line(display, tuple(points[i]), tuple(points[i + 1]), (255, 255, 0), 2)
 
-    # 左上角半透明提示面板
+    # 左上角提示面板
     overlay = display.copy()
-    cv2.rectangle(overlay, (10, 10), (470, 210), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (10, 10), (510, 240), (0, 0, 0), -1)
     display = cv2.addWeighted(overlay, 0.55, display, 0.45, 0)
+
+    play_status = "PAUSED - draw ROI now" if paused else "PLAYING - press SPACE to pause"
 
     tips = [
         "Task6 ROI Drawing Tool",
+        play_status,
         "Left Click : add point",
         "Right Click: undo point",
         "F : save as Forbidden Zone",
         "A : save as Warning Zone",
+        "C : clear current points",
+        "R : clear all saved ROI",
         "S : save to roi_config.json",
+        "SPACE : pause / continue",
         "Q : quit",
         f"Current points: {len(points)}",
         f"Saved ROI: {len(roi_list)}",
@@ -83,17 +89,17 @@ def draw_ui(frame):
 
     y = 38
     for i, tip in enumerate(tips):
-        color = (0, 255, 255) if i == 0 else (255, 255, 255)
+        color = (0, 255, 255) if i in (0, 1) else (255, 255, 255)
         cv2.putText(
             display,
             tip,
             (25, y),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.58,
+            0.56,
             color,
             2,
         )
-        y += 22
+        y += 20
 
     return display
 
@@ -105,7 +111,7 @@ def add_roi(roi_type):
         print("至少需要 3 个点才能形成 ROI")
         return
 
-    name = input(f"请输入 ROI 名称（例如 A_warning / B_forbidden）：").strip()
+    name = input("请输入 ROI 名称（例如 A_warning / B_forbidden）：").strip()
 
     if not name:
         name = f"{roi_type}_{len(roi_list) + 1}"
@@ -121,10 +127,26 @@ def add_roi(roi_type):
 
     print(f"[添加 ROI] {roi}")
 
+def clear_current_points():
+    global points
+    points = []
+    print("[清除] 当前正在绘制的点已清空")
 
-def main():
-    global current_frame
 
+def clear_all_rois():
+    global roi_list, points
+    confirm = input("确认清除所有已保存 ROI 吗？输入 yes 确认：").strip().lower()
+
+    if confirm == "yes":
+        roi_list = []
+        points = []
+        save_roi_config()
+        print("[清除] 所有 ROI 已清空，并已写入配置文件")
+    else:
+        print("[取消] 未清除 ROI")
+
+
+def load_existing_roi():
     if os.path.exists(ROI_PATH):
         try:
             with open(ROI_PATH, "r", encoding="utf-8") as f:
@@ -134,44 +156,66 @@ def main():
         except Exception:
             print("[提示] 旧 ROI 文件读取失败，将重新创建")
 
+
+def main():
+    global current_frame
+
+    load_existing_roi()
+
     cap = cv2.VideoCapture(VIDEO_PATH)
 
     if not cap.isOpened():
         print(f"无法打开视频：{VIDEO_PATH}")
-        print("请把测试视频命名为 test.mp4，放到 D:\\work 目录下")
         return
-
-    ret, frame = cap.read()
-    cap.release()
-
-    if not ret:
-        print("无法读取视频第一帧")
-        return
-
-    current_frame = frame
 
     cv2.namedWindow("Task6 ROI Drawer")
     cv2.setMouseCallback("Task6 ROI Drawer", mouse_callback)
 
+    paused = False
+
     print("\n使用说明：")
-    print("鼠标左键：添加 ROI 顶点")
-    print("鼠标右键：撤销上一个点")
+    print("视频播放时，先按空格暂停")
+    print("暂停后用鼠标左键添加 ROI 顶点")
+    print("鼠标右键撤销上一个点")
     print("按 F：保存为 forbidden 禁区")
     print("按 A：保存为 warning 预警区")
     print("按 S：写入 roi_config.json")
     print("按 Q：退出\n")
 
     while True:
-        display = draw_ui(current_frame)
+        if not paused:
+            ret, frame = cap.read()
+
+            if not ret:
+                # 播放到结尾后自动回到开头
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+
+            current_frame = frame
+
+        if current_frame is None:
+            continue
+
+        display = draw_ui(current_frame, paused)
         cv2.imshow("Task6 ROI Drawer", display)
 
-        key = cv2.waitKey(20) & 0xFF
+        key = cv2.waitKey(30) & 0xFF
 
-        if key == ord("f"):
+        if key == ord(" "):
+            paused = not paused
+            print("已暂停，可以画 ROI" if paused else "继续播放")
+
+        elif key == ord("f"):
             add_roi("forbidden")
 
         elif key == ord("a"):
             add_roi("warning")
+
+        elif key == ord("c"):
+            clear_current_points()
+
+        elif key == ord("r"):
+            clear_all_rois()
 
         elif key == ord("s"):
             save_roi_config()
@@ -179,6 +223,7 @@ def main():
         elif key == ord("q"):
             break
 
+    cap.release()
     cv2.destroyAllWindows()
 
 
